@@ -1,0 +1,285 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
+        {
+            "name": "Train ResNet next day cysticity classification",
+            "type": "python",
+            "request": "launch",
+            "program": "resnet_classifier.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            // "env": {
+            //     "CUDA_VISIBLE_DEVICES": "0"
+            // },
+            "args": [
+                "34",
+                "1",
+                "30",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/MRT_organoide/datensatz_neuer_batch_13_04_23/mri_new_batch_microscopy_brightfield_images/Neuer Batch/all_images_resnetlight_cysticity_classification/run_21_06_23_nd_cystic_classification/train",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/MRT_organoide/datensatz_neuer_batch_13_04_23/mri_new_batch_microscopy_brightfield_images/Neuer Batch/all_images_resnetlight_cysticity_classification/run_21_06_23_nd_cystic_classification/val",
+                "-g",
+                "1",
+                "-tr",
+                "--ce_weights",
+                "1.0", // 127 of 145 are class 0
+                "7.05555555556", // 18 / 145 are class 1, class 1 should have much higher weight
+                "-lr",
+                "1e-6",
+                "-s",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/MRT_organoide/datensatz_neuer_batch_13_04_23/mri_new_batch_microscopy_brightfield_images/Neuer Batch/all_images_resnetlight_cysticity_classification/run_21_06_23_nd_cystic_classification/outdir_cyst_class",
+                "-ts",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/MRT_organoide/datensatz_neuer_batch_13_04_23/mri_new_batch_microscopy_brightfield_images/Neuer Batch/all_images_resnetlight_cysticity_classification/run_21_06_23_nd_cystic_classification/test",
+                "-tb_outdir",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/MRT_organoide/datensatz_neuer_batch_13_04_23/mri_new_batch_microscopy_brightfield_images/Neuer Batch/all_images_resnetlight_cysticity_classification/run_21_06_23_nd_cystic_classification"
+            ]
+        },
+        {
+            "name": "Train ResNet cysticity classification (random split 2), CE weights are old, but lets just use the same params as previously",
+            "type": "python",
+            "request": "launch",
+            "program": "resnet_classifier.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            // "env": {
+            //     "CUDA_VISIBLE_DEVICES": "0"
+            // },
+            "args": [
+                "34",
+                "1",
+                "20",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/MRT_organoide/datensatz_neuer_batch_13_04_23/mri_new_batch_microscopy_brightfield_images/Neuer Batch/all_images_resnetlight_cysticity_classification/run_21_06_23/split2/train",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/MRT_organoide/datensatz_neuer_batch_13_04_23/mri_new_batch_microscopy_brightfield_images/Neuer Batch/all_images_resnetlight_cysticity_classification/run_21_06_23/split2/val",
+                "-g",
+                "1",
+                "-tr",
+                "--ce_weights",
+                "1.0",
+                "8.458333",
+                "-lr",
+                "1e-6",
+                "-s",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/MRT_organoide/datensatz_neuer_batch_13_04_23/mri_new_batch_microscopy_brightfield_images/Neuer Batch/all_images_resnetlight_cysticity_classification/run_21_06_23/split2/outdir_cyst_class",
+                "-ts",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/MRT_organoide/datensatz_neuer_batch_13_04_23/mri_new_batch_microscopy_brightfield_images/Neuer Batch/all_images_resnetlight_cysticity_classification/run_21_06_23/split2/test",
+                "-tb_outdir",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/MRT_organoide/datensatz_neuer_batch_13_04_23/mri_new_batch_microscopy_brightfield_images/Neuer Batch/all_images_resnetlight_cysticity_classification/run_21_06_23/split2/outdir_cyst_class"
+            ]
+        },
+        {
+            "name": "Train ResNet cysticity classification",
+            "type": "python",
+            "request": "launch",
+            "program": "resnet_classifier.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            // "env": {
+            //     "CUDA_VISIBLE_DEVICES": "0"
+            // },
+            "args": [
+                "34",
+                "1",
+                "20",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/MRT_organoide/datensatz_neuer_batch_13_04_23/mri_new_batch_microscopy_brightfield_images/Neuer Batch/all_images_resnetlight_cysticity_classification/run_21_06_23/train",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/MRT_organoide/datensatz_neuer_batch_13_04_23/mri_new_batch_microscopy_brightfield_images/Neuer Batch/all_images_resnetlight_cysticity_classification/run_21_06_23/val",
+                "-g",
+                "1",
+                "-tr",
+                "--ce_weights",
+                "1.0",
+                "8.458333",
+                "-lr",
+                "1e-6",
+                "-s",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/MRT_organoide/datensatz_neuer_batch_13_04_23/mri_new_batch_microscopy_brightfield_images/Neuer Batch/all_images_resnetlight_cysticity_classification/run_21_06_23/outdir_cyst_class",
+                "-ts",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/MRT_organoide/datensatz_neuer_batch_13_04_23/mri_new_batch_microscopy_brightfield_images/Neuer Batch/all_images_resnetlight_cysticity_classification/run_21_06_23/test",
+                "-tb_outdir",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/MRT_organoide/datensatz_neuer_batch_13_04_23/mri_new_batch_microscopy_brightfield_images/Neuer Batch/all_images_resnetlight_cysticity_classification/run_21_06_23/outdir_cyst_class"
+            ]
+        },
+        {
+            "name": "Train ResNet 2d ventricle classification weighted, with test set slow training",
+            "type": "python",
+            "request": "launch",
+            "program": "resnet_classifier.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "34",
+                "1",
+                "5",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/new_dataset_incl_images_run2/train",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/new_dataset_incl_images_run2/val",
+                "-g",
+                "1",
+                "-tr",
+                "--ce_weights",
+                "1.0",
+                "8.458333",
+                "-lr",
+                "1e-6",
+                "-ts",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/new_dataset_incl_images_run2/test"
+            ]
+        },
+        {
+            "name": "Train ResNet 2d ventricle classification weighted, with test set",
+            "type": "python",
+            "request": "launch",
+            "program": "resnet_classifier.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "34",
+                "1",
+                "40",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/new_dataset_incl_images_run2/train",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/new_dataset_incl_images_run2/val",
+                "-g",
+                "1",
+                "-tr",
+                "--ce_weights",
+                "1.0",
+                "8.458333",
+                "-lr",
+                "5e-5",
+                "-ts",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/new_dataset_incl_images_run2/test"
+            ]
+        },
+        {
+            "name": "Gradcam ResNet 2d vclass model with val MCC = 1.0",
+            "type": "python",
+            "request": "launch",
+            "program": "grad_cam_2d_ms_org_vclass.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "34",
+                "1",
+                "20",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/data/dataset/train",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/data/dataset/val",
+                "-g",
+                "1",
+                "-tr",
+                "-to",
+                "--img_dir",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/data/dataset/val/no_ventricle",
+                "--ce_weights",
+                "1.0",
+                "8.458333",
+                "--outputdir",
+                "gradcam_output_new_model_val_1.0_no_v",
+                "--modelckp",
+                "models/resnet-model-epoch=24-val_loss=0.00-val_acc=0.00.ckpt"
+            ]
+        },
+        {
+            "name": "Gradcam ResNet 2d vclass new model",
+            "type": "python",
+            "request": "launch",
+            "program": "grad_cam_2d_ms_org_vclass.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "34",
+                "1",
+                "20",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/data/dataset/train",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/data/dataset/val",
+                "-g",
+                "1",
+                "-tr",
+                "-to",
+                "--img_dir",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/data/dataset/val/no_ventricle",
+                "--ce_weights",
+                "1.0",
+                "8.458333",
+                "--outputdir",
+                "gradcam_output_new_model_no_v",
+                "--modelckp",
+                "models/resnet-model-epoch=54-val_loss=0.00-val_acc=0.00.ckpt"
+            ]
+        },
+        {
+            "name": "Gradcam ResNet 2d ventricle classification",
+            "type": "python",
+            "request": "launch",
+            "program": "grad_cam_2d_ms_org_vclass.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "18",
+                "1",
+                "20",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/data/dataset/train",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/data/dataset/val",
+                "-g",
+                "1",
+                "-tr",
+                "-to",
+                "--img_dir",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/data/dataset/train/ventricle",
+                "--ce_weights",
+                "1.0",
+                "8.458333",
+                "--outputdir",
+                "gradcam_output"
+            ]
+        },
+        {
+            "name": "Train ResNet 2d ventricle classification weighted",
+            "type": "python",
+            "request": "launch",
+            "program": "resnet_classifier.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "34",
+                "1",
+                "100",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/data/dataset/train",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/data/dataset/val",
+                "-g",
+                "1",
+                "-tr",
+                "--ce_weights",
+                "1.0",
+                "8.458333",
+                "-lr",
+                "5e-5"
+            ]
+        },
+        {
+            "name": "Train ResNet 2d ventricle classification",
+            "type": "python",
+            "request": "launch",
+            "program": "resnet_classifier.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "18",
+                "1",
+                "20",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/data/dataset/train",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/data/dataset/val",
+                "-g",
+                "1",
+                "-tr"
+            ]
+        }
+    ]
+}

@@ -1,2 +1,8 @@
 renet-env/
 lightning_logs/
+*.jpg
+*.png
+models
+tb_logs/
+model_test_predictions
+__pycache__
