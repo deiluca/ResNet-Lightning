@@ -1,0 +1,1 @@
+python resnet_classifier.py 18 1 20 /mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/data/dataset/train /mnt/lsdf_iai-aida/Daten_Deininger/projects/2d_ms_org_ventricle_seg/data/dataset/val -ts -g 1 -tr -to
