@@ -40,6 +40,7 @@ from torchvision.transforms import (
     Compose,
     Lambda,
     RandomCrop,
+    Resize,
     RandomHorizontalFlip
 )
 
@@ -52,6 +53,130 @@ from pytorchvideo.data import Kinetics
 
 from collections import Counter
 from os.path import join as opj
+from pytorch_lightning import seed_everything
+from pytorch_lightning.callbacks import DeviceStatsMonitor
+import random
+import PIL
+import torchvision
+# torch.use_deterministic_algorithms(True, warn_only=True) # https://github.com/pytorch/pytorch/issues/89492
+
+class ColorJitterVideo(object):
+    """Randomly change the brightness, contrast and saturation and hue of the clip
+
+    Args:
+    brightness (float): How much to jitter brightness. brightness_factor
+    is chosen uniformly from [max(0, 1 - brightness), 1 + brightness].
+    contrast (float): How much to jitter contrast. contrast_factor
+    is chosen uniformly from [max(0, 1 - contrast), 1 + contrast].
+    saturation (float): How much to jitter saturation. saturation_factor
+    is chosen uniformly from [max(0, 1 - saturation), 1 + saturation].
+    hue(float): How much to jitter hue. hue_factor is chosen uniformly from
+    [-hue, hue]. Should be >=0 and <= 0.5.
+    """
+
+    def __init__(self, brightness=0, contrast=0, saturation=0, hue=0, data_path=None):
+        self.brightness = brightness
+        self.contrast = contrast
+        self.saturation = saturation
+        self.hue = hue
+        self.data_path = data_path
+
+    def get_params(self, brightness, contrast, saturation, hue):
+        if brightness > 0:
+            brightness_factor = random.uniform(
+                max(0, 1 - brightness), 1 + brightness)
+        else:
+            brightness_factor = None
+
+        if contrast > 0:
+            contrast_factor = random.uniform(
+                max(0, 1 - contrast), 1 + contrast)
+        else:
+            contrast_factor = None
+
+        if saturation > 0:
+            saturation_factor = random.uniform(
+                max(0, 1 - saturation), 1 + saturation)
+        else:
+            saturation_factor = None
+
+        if hue > 0:
+            hue_factor = random.uniform(-hue, hue)
+        else:
+            hue_factor = None
+        return brightness_factor, contrast_factor, saturation_factor, hue_factor
+    
+    def apply_transform(self, img, brightness, contrast, saturation, hue):
+
+        # Apply transformations
+        if brightness is not None:
+            img = torchvision.transforms.functional.adjust_brightness(img, brightness)
+        if contrast is not None:
+            img = torchvision.transforms.functional.adjust_contrast(img, contrast)
+        if saturation is not None:
+            img = torchvision.transforms.functional.adjust_saturation(img, saturation)
+        if hue is not None:
+            img = torchvision.transforms.functional.adjust_hue(img, hue)
+
+        return img
+    
+    def __call__(self, clip):
+        """
+        Args:
+        clip (list): list of PIL.Image
+
+        Returns:
+        list PIL.Image : list of transformed PIL.Image
+        """
+        if isinstance(clip[0], np.ndarray):
+            raise TypeError(
+                'Color jitter not yet implemented for numpy arrays')
+        elif isinstance(clip[0], PIL.Image.Image):
+            brightness, contrast, saturation, hue = self.get_params(
+                self.brightness, self.contrast, self.saturation, self.hue)
+
+            # Create img transform function sequence
+            img_transforms = []
+            if brightness is not None:
+                img_transforms.append(lambda img: torchvision.transforms.functional.adjust_brightness(img, brightness))
+            if saturation is not None:
+                img_transforms.append(lambda img: torchvision.transforms.functional.adjust_saturation(img, saturation))
+            if hue is not None:
+                img_transforms.append(lambda img: torchvision.transforms.functional.adjust_hue(img, hue))
+            if contrast is not None:
+                img_transforms.append(lambda img: torchvision.transforms.functional.adjust_contrast(img, contrast))
+            random.shuffle(img_transforms)
+
+            # Apply to all images
+            jittered_clip = []
+            for img in clip:
+                for func in img_transforms:
+                    jittered_img = func(img)
+                jittered_clip.append(jittered_img)
+        elif isinstance(clip[0], torch.Tensor):  # List of Tensors
+                brightness, contrast, saturation, hue = self.get_params(self.brightness, self.contrast, self.saturation, self.hue)
+                clip_dimension = 1
+                bcsh_str = f"b{brightness:.6f}"
+                # print("clip.shape", clip.shape)
+                # for tensor in clip:
+                #     print(tensor.shape)
+                jittered_clip = [self.apply_transform(torchvision.transforms.functional.to_pil_image(clip[:, i, :, :]), brightness, contrast, saturation, hue) for i in range(clip.shape[clip_dimension])]
+                if self.data_path is not None:
+                    save_dir = '/lsdf/kit/iai/projects/iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/videos_allt/results/epochs100_mvit_lr-autofind_cd8_uts8_bs1_img_size224_wd0.0001_opt-sgd_cj-strength0.1_config2/split0'
+                    save_name = opj(save_dir, os.path.basename(self.data_path)+ f'_{bcsh_str}_')
+                    # print(self.data_path)
+                    clip_pil = [torchvision.transforms.functional.to_pil_image(clip[:, i, :, :]) for i in range(clip.shape[clip_dimension])]
+                    for i, c in enumerate(clip_pil):
+                        c.save(save_name+ f'_{i}.png')
+                    for i, c in enumerate(jittered_clip):
+                        c.save(save_name+ f'{i}_cj.png')
+                jittered_clip = torch.stack([torchvision.transforms.functional.to_tensor(img) for img in jittered_clip], dim=clip_dimension)
+                # print("jittered_clip.shape", jittered_clip.shape)
+                assert clip.shape == jittered_clip.shape
+        else:
+            raise TypeError('Expected numpy.ndarray or PIL.Image' +
+                            'but got list of {0}'.format(type(clip[0])))
+        return jittered_clip
 
 
 def make_kinetics_resnet():
@@ -67,6 +192,8 @@ class KineticsDataModule(pl.LightningDataModule):
         unif_temp_sub=16,
         test_path=None,
         num_workers=8,
+        vit_img_size=224,
+        cj_bn=0.0
     ):
         super().__init__()
         self.train_path = train_path
@@ -75,28 +202,72 @@ class KineticsDataModule(pl.LightningDataModule):
         self.batch_size = batch_size
         self.num_workers = num_workers
         self.unif_temp_sub = unif_temp_sub
+        self.model = model
+        self.vit_img_size = vit_img_size
 
         self.clip_dur = clip_dur
+        self.cj_bn = cj_bn
 
     def _dataloader(self, data_path, mode):
         # values here are specific to pneumonia dataset and should be updated for custom data
-        transform = Compose(
-            [
-            ApplyTransformToKey(
-              key="video",
-              transform=Compose(
-                  [
-                    UniformTemporalSubsample(self.unif_temp_sub),### subsamples 8 images from T in range 0-153, so it will select at the beginning, middle and end, so probably day 0, 20, 40, 60, 80, 100, 120, 140 (these are 8)
-                    Lambda(lambda x: x / 255.0),
-                    Normalize((0.45, 0.45, 0.45), (0.225, 0.225, 0.225)),
-                    # RandomShortSideScale(min_size=256, max_size=320),
-                    # RandomCrop(244),
-                    RandomHorizontalFlip(p=0.5),
-                  ]
+        if self.model=='resnet':
+            transform = Compose(
+                [
+                ApplyTransformToKey(
+                key="video",
+                transform=Compose(
+                    [
+                        UniformTemporalSubsample(self.unif_temp_sub),### subsamples 8 images from T in range 0-153, so it will select at the beginning, middle and end, so probably day 0, 20, 40, 60, 80, 100, 120, 140 (these are 8)
+                        Lambda(lambda x: x / 255.0),
+                        Normalize((0.45, 0.45, 0.45), (0.225, 0.225, 0.225)),
+                        # RandomShortSideScale(min_size=256, max_size=320),
+                        # RandomCrop(244),
+                        RandomHorizontalFlip(p=0.5),
+                    ]
+                    ),
                 ),
-              ),
-            ]
-        )
+                ]
+            )
+        else:
+            if self.cj_bn ==0.0:
+                print(' NOT using colorjitter')
+                transform = Compose(
+                    [
+                    ApplyTransformToKey(
+                    key="video",
+                    transform=Compose(
+                        [
+                            UniformTemporalSubsample(self.unif_temp_sub),### subsamples 8 images from T in range 0-153, so it will select at the beginning, middle and end, so probably day 0, 20, 40, 60, 80, 100, 120, 140 (these are 8)
+                            Lambda(lambda x: x / 255.0),
+                            Normalize((0.45, 0.45, 0.45), (0.225, 0.225, 0.225)),
+                            # RandomShortSideScale(min_size=256, max_size=320),
+                            Resize(self.vit_img_size),
+                            RandomHorizontalFlip(p=0.5),
+                        ]
+                        ),
+                    ),
+                    ]
+                )
+            else:
+                print('using colorjitter')
+                transform = Compose(
+                    [
+                    ApplyTransformToKey(
+                    key="video",
+                    transform=Compose(
+                        [
+                            UniformTemporalSubsample(self.unif_temp_sub),### subsamples 8 images from T in range 0-153, so it will select at the beginning, middle and end, so probably day 0, 20, 40, 60, 80, 100, 120, 140 (these are 8)
+                            Lambda(lambda x: x / 255.0),
+                            ColorJitterVideo(brightness=self.cj_bn),
+                            Normalize((0.45, 0.45, 0.45), (0.225, 0.225, 0.225)),
+                            # RandomShortSideScale(min_size=256, max_size=320),
+                            Resize(self.vit_img_size),
+                            RandomHorizontalFlip(p=0.5),
+                        ]
+                        ),
+                    ),
+                    ]
+                )
         dataset = Kinetics(
             data_path=os.path.join(data_path),
             clip_sampler=pytorchvideo.data.make_clip_sampler("uniform" if mode!='train' else 'random', self.clip_dur), #original : random, what is this?
@@ -128,25 +299,60 @@ class KineticsDataModule(pl.LightningDataModule):
     
 class VideoClassificationLightningModule(pl.LightningModule):
     def __init__(self,
-                 resnet_version,
+                 model,
                  num_classes,
                  ce_weights,
                  test_path,
+                 nr_test_videos,
                  save_path,
-                 lr=1e-1):
+                 optimizer_str,
+                 lr=1e-1,
+                 weight_decay=0,
+                 vit_img_size=224,
+                 unif_temp_sub=154):
         super().__init__()
+        self.optimizer_str = optimizer_str
         self.lr = lr
+        self.weight_decay = weight_decay
         self.num_classes = num_classes
         self.test_path = test_path
         self.save_path = save_path
-
-        self.model = pytorchvideo.models.resnet.create_resnet(
-                    input_channel=3, # RGB input from Kinetics
-                    model_depth=resnet_version, # For the tutorial let's just use a 50 layer network
-                    model_num_class=num_classes, # Kinetics has 400 classes so we need out final head to align
-                    norm=nn.BatchNorm3d,
-                    activation=nn.ReLU
-        )
+        self.nr_test_videos = nr_test_videos
+        self.vit_img_size = vit_img_size
+        self.model=model
+        self.unif_temp_sub=unif_temp_sub
+        if model=='resnet':
+            self.model = pytorchvideo.models.resnet.create_resnet(
+                        input_channel=3, # RGB input from Kinetics
+                        model_depth=50, # For the tutorial let's just use a 50 layer network
+                        model_num_class=num_classes, # Kinetics has 400 classes so we need out final head to align
+                        norm=nn.BatchNorm3d,
+                        activation=nn.ReLU
+            )
+        else:
+            # just tried my config
+            # self.model = pytorchvideo.models.vision_transformers.create_multiscale_vision_transformers(
+            #             spatial_size=self.vit_img_size,
+            #             temporal_size=self.unif_temp_sub,
+            #             input_channels=3, # RGB input from Kinetics
+            #             head_num_classes=num_classes
+            # )
+            # pytorch video example code for vit-m
+            embed_dim_mul = [[1, 2.0], [3, 2.0], [14, 2.0]]
+            atten_head_mul = [[1, 2.0], [3, 2.0], [14, 2.0]]
+            pool_q_stride_size = [[1, 1, 2, 2], [3, 1, 2, 2], [14, 1, 2, 2]]
+            pool_kv_stride_adaptive = [1, 8, 8]
+            pool_kvq_kernel = [3, 3, 3]
+            self.model = pytorchvideo.models.vision_transformers.create_multiscale_vision_transformers(
+                spatial_size=self.vit_img_size,
+                temporal_size=self.unif_temp_sub,
+                embed_dim_mul=embed_dim_mul,
+                atten_head_mul=atten_head_mul,
+                pool_q_stride_size=pool_q_stride_size,
+                pool_kv_stride_adaptive=pool_kv_stride_adaptive,
+                pool_kvq_kernel=pool_kvq_kernel,
+                head_num_classes=num_classes,
+            )
         self.loss_fn = (
                 nn.BCEWithLogitsLoss(pos_weight=torch.tensor(ce_weights[1])) if self.num_classes == 1 else nn.CrossEntropyLoss(weight=torch.tensor(ce_weights))
             )
@@ -162,24 +368,24 @@ class VideoClassificationLightningModule(pl.LightningModule):
         self.class_idx['good'] = 1
         self.class_idx['mediocre'] = 2
 
-        self.df = self.get_test_gt()
+        # self.df = self.get_test_gt()
 
-        self.test_predictions, self.test_targets = [], []
+        self.test_filenames, self.test_predictions, self.test_targets = [], [], []
 
-    def get_test_gt(self):
-        filenames, targets = [], []
+    # def get_test_gt(self):
+    #     filenames, targets = [], []
 
-        # class_to_idx = {'bad':0,
-        #                 'good': 1,
-        #                 'mediocre':2}
+    #     # class_to_idx = {'bad':0,
+    #     #                 'good': 1,
+    #     #                 'mediocre':2}
 
-        for subd in ['bad', 'good', 'mediocre']:
-            d2 = opj(self.test_path, subd)
-            for x in os.listdir(d2):
-                filenames.append(x)
-                targets.append(self.class_idx[subd])
-        df = pd.DataFrame.from_dict({'filename': filenames, 'target': targets})
-        return df
+    #     for subd in ['bad', 'good', 'mediocre']:
+    #         d2 = opj(self.test_path, subd)
+    #         for x in os.listdir(d2):
+    #             filenames.append(x)
+    #             targets.append(self.class_idx[subd])
+    #     df = pd.DataFrame.from_dict({'filename': filenames, 'target': targets})
+    #     return df
     
     def forward(self, x):
         return self.model(x)
@@ -238,7 +444,7 @@ class VideoClassificationLightningModule(pl.LightningModule):
             f"{mode}/PRAUCGood", prauc[self.class_idx['good']], on_epoch=True, prog_bar=False, logger=True
         )
         if mode=='Test':
-            return loss, preds.cpu().numpy(), y.cpu().numpy()
+            return loss, preds.cpu().numpy(), y.cpu().numpy(), np.array(batch['video_name'])
         else:
             return loss
 
@@ -256,17 +462,47 @@ class VideoClassificationLightningModule(pl.LightningModule):
         return loss
     
     def test_step(self, batch, batch_idx):
-        loss, preds, targets = self._step(batch, mode='Test')
-        
-        self.test_predictions.extend(np.squeeze(preds).tolist())
-        self.test_targets.extend(np.squeeze(targets).tolist())
-        print(len(self.test_predictions), self.df.shape[0])
-        if len(self.test_predictions) == self.df.shape[0]:
-            self.df['predicted'] = self.test_predictions
-            self.df['target_2'] = self.test_targets
-            self.df['predicted_cls'] = self.df['predicted'].apply(lambda x: np.argmax(x))
+        _, preds, targets, filenames = self._step(batch, mode='Test')
+        if len(targets) > 1:
+            self.test_targets.extend(np.squeeze(targets).tolist())
+            self.test_filenames.extend(np.squeeze(filenames).tolist())
+            self.test_predictions.extend(np.squeeze(preds).tolist())
+        else:
+            self.test_targets.extend(targets.tolist())  
+            self.test_filenames.extend(filenames.tolist())  
+            self.test_predictions.extend(preds.tolist())  
+        print(len(self.test_predictions), self.nr_test_videos, flush=True)
+        print("len(self.test_filenames), len(self.test_predictions), len(self.test_targets):")
+        print(len(self.test_filenames), len(self.test_predictions), len(self.test_targets))
+        print("self.test_filenames:", self.test_filenames)
+        print("self.test_predictions:", self.test_predictions)
+        print("self.test_targets:", self.test_targets)
+        if len(self.test_predictions) == self.nr_test_videos:
             print('saving output csv')
-            self.df.to_csv(os.path.join(self.save_path, 'outputs.csv'), index=False)
+            df = pd.DataFrame.from_dict({'filename': self.test_filenames, 
+                                         'predicted': self.test_predictions,
+                                         'target_2': self.test_targets})
+            df['predicted_cls'] = df['predicted'].apply(lambda x: np.argmax(x))
+            df.to_csv(os.path.join(self.save_path, 'outputs.csv'), index=False)
+
+    # def test_step(self, batch, batch_idx):
+    #     loss, preds, targets = self._step(batch, mode='Test')
+        
+    #     print(preds.shape, targets.shape, flush=True)
+    #     print("preds:", preds, flush=True)
+    #     print("targets:", targets, flush=True)
+    #     self.test_predictions.extend(np.squeeze(preds).tolist())
+    #     if len(targets) > 1:
+    #         self.test_targets.extend(np.squeeze(targets).tolist())
+    #     else:
+    #         self.test_targets.extend(targets.tolist())  
+    #     print(len(self.test_predictions), self.df.shape[0])
+    #     if len(self.test_predictions) == self.df.shape[0]:
+    #         self.df['predicted'] = self.test_predictions
+    #         self.df['target_2'] = self.test_targets
+    #         self.df['predicted_cls'] = self.df['predicted'].apply(lambda x: np.argmax(x))
+    #         print('saving output csv')
+    #         self.df.to_csv(os.path.join(self.save_path, 'outputs.csv'), index=False)
 
 
     def configure_optimizers(self):
@@ -274,8 +510,20 @@ class VideoClassificationLightningModule(pl.LightningModule):
         Setup the Adam optimizer. Note, that this function also can return a lr scheduler, which is
         usually useful for training video models.
         """
-        return torch.optim.Adam(self.parameters(), lr=self.lr)
-    
+        print('using lr: ', self.lr)
+        print('using weight decay: ', self.weight_decay)
+        if self.optimizer_str=='adam':
+            return torch.optim.Adam(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+        elif self.optimizer_str=='sgd':
+            return torch.optim.SGD(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+
+def get_nr_videos_in_test_dir(dir):
+    nr_videos = 0
+    nr_videos += len(os.listdir(opj(dir, 'bad'))) 
+    nr_videos += len(os.listdir(opj(dir, 'mediocre')))
+    nr_videos += len(os.listdir(opj(dir, 'good')))
+    return nr_videos
+
 
 if __name__ == "__main__":
     parser = ArgumentParser()
@@ -283,7 +531,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "model",
         help="""Choose one of the predefined ResNet models provided by torchvision. e.g. 50""",
-        type=int,
+        type=str,
+        choices=['resnet', 'mvit'],
     )
     parser.add_argument(
         "num_classes", help="""Number of classes to be learned.""", type=int
@@ -309,6 +558,7 @@ if __name__ == "__main__":
         "--optimizer",
         help="""PyTorch optimizer to use. Defaults to adam.""",
         default="adam",
+        choices = ['adam', 'sgd']
     )
     parser.add_argument(
         "-lr",
@@ -316,6 +566,19 @@ if __name__ == "__main__":
         help="Adjust learning rate of optimizer.",
         type=float,
         default=1e-3,
+    )
+    parser.add_argument(
+        "-wd",
+        "--weight_decay",
+        help="Adjust learning rate of optimizer.",
+        type=float,
+        default=0.0,
+    )
+    parser.add_argument(
+        "--cj_bn",
+        help="Adjust learning rate of optimizer.",
+        type=float,
+        default=0.0,
     )
     parser.add_argument(
         "-cd",
@@ -337,6 +600,12 @@ if __name__ == "__main__":
         default=16,
     )
     parser.add_argument(
+        "--vit_img_size",
+        help="""Manually determine batch size. Defaults to 16.""",
+        type=int,
+        default=16,
+    )
+    parser.add_argument(
         "-tr",
         "--transfer",
         help="""Determine whether to use pretrained model or train from scratch. Defaults to True.""",
@@ -349,6 +618,23 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
+        "--ckpth_best",
+        help="""for model testing: best model checkpoint""",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
+        "-uaflr",
+        "--use_autofindlr",
+        help="use_autofindlr",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--test_only",
+        help="do not train the model, only test model",
+        action="store_true",
+    )
+    parser.add_argument(
         "-s", "--save_path", help="""Path to save model trained model checkpoint."""
     )
     parser.add_argument(
@@ -357,22 +643,34 @@ if __name__ == "__main__":
     parser.add_argument(
         "-tb_outdir", "--tb_outdir", help="""tb_outdir""", type=Path
     )
-    args = parser.parse_args()    
-    model = VideoClassificationLightningModule(resnet_version=args.model,
+    args = parser.parse_args()
+    # Print parsed arguments
+    for arg, value in vars(args).items():
+        print(f'{arg}: {value}')    
+    seed_everything(42)  
+    model = VideoClassificationLightningModule(model=args.model,
                                                num_classes=args.num_classes,
                                                ce_weights=args.ce_weights,
                                                test_path = args.test_set,
+                                               nr_test_videos = get_nr_videos_in_test_dir(args.test_set) if args.test_set is not None else 0,
+                                               optimizer_str=args.optimizer,
                                                lr=args.learning_rate,
-                                               save_path=args.save_path)
+                                               save_path=args.save_path,
+                                               vit_img_size=args.vit_img_size,
+                                               unif_temp_sub=args.unif_temp_sub,
+                                               weight_decay=args.weight_decay)
     data_module = KineticsDataModule(train_path = args.train_set,                  
                                     val_path = args.val_set,
                                     test_path = args.test_set,
                                     clip_dur=args.clip_duration,
                                     unif_temp_sub = args.unif_temp_sub,
                                     batch_size=args.batch_size,
+                                    vit_img_size = args.vit_img_size,
+                                    cj_bn = args.cj_bn
 )
 
     save_path = args.save_path if args.save_path is not None else "./models"
+    print("save_path:", save_path)
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
         dirpath=save_path,
         filename="resnet-model-{epoch}-{val_loss:.4f}",
@@ -383,22 +681,34 @@ if __name__ == "__main__":
     )
 
     stopping_callback = pl.callbacks.EarlyStopping(monitor='val_loss')
+    # device_stats = DeviceStatsMonitor(cpu_stats=True)
+    if args.use_autofindlr:
+        auto_findlr_callback = pl.callbacks.LearningRateFinder()
+        callbacks = [checkpoint_callback, auto_findlr_callback]
+    else:
+        callbacks = [checkpoint_callback]
 
     # Instantiate lightning trainer and train model
     trainer_args = {
-        "accelerator": "gpu" if args.gpus else None,
-        "devices": [0],
-        # "strategy": "dp" if args.gpus > 1 else None,
-        "strategy": "ddp" if args.gpus > 1 else None,
+        "accelerator": "gpu",
+        "devices": "auto",
+        "strategy": "auto",
         "max_epochs": args.num_epochs,
-        "callbacks": [checkpoint_callback],
-        "precision": 16 if args.mixed_precision else 32,
+        "callbacks": callbacks,
+        "precision": 16,
         "logger": TensorBoardLogger(args.tb_outdir, name="my_model"),
-        "log_every_n_steps": 10**10
+        "log_every_n_steps": 10**10,
+        "deterministic": False
     }
+    print("args.use_autofindlr", args.use_autofindlr)
     trainer = pl.Trainer(**trainer_args)
+    if not args.test_only:
+        trainer.fit(model, data_module)
+    else:
+        assert args.test_set is not None
+        assert args.ckpth_best is not None
+        trainer.test(model, data_module, ckpt_path=args.ckpth_best)
 
-    trainer.fit(model, data_module)
 
-    if args.test_set:
-        trainer.test(model, data_module)
+    # if args.test_set:
+    #     trainer.test(model, data_module, ckpt_path='best')
