@@ -63,19 +63,20 @@ class ResNetClassifier(pl.LightningModule):
 
         self.optimizer = self.optimizers[optimizer]
         # instantiate loss criterion
-        if ce_weights is None:
-            self.loss_fn = (
-                nn.BCEWithLogitsLoss() if num_classes == 1 else nn.CrossEntropyLoss()
-            )
-        else:
-            self.loss_fn = (
-                nn.BCEWithLogitsLoss(pos_weight=torch.tensor(ce_weights[1])) if num_classes == 1 else nn.CrossEntropyLoss()
-            )
+        #if ce_weights is None:
+        #    self.loss_fn = (
+        #        nn.BCEWithLogitsLoss() if um_classes == 1 else nn.CrossEntropyLoss()
+        #    )
+        #else:
+        #    self.loss_fn = (
+        #        nn.BCEWithLogitsLoss(pos_weight=torch.tensor(ce_weights[1])) if num_classes == 1 else nn.CrossEntropyLoss()
+        #    )
         # create accuracy metric
+        self.loss_fn = nn.CrossEntropyLoss(weight=torch.tensor(ce_weights))
         self.acc = Accuracy(
             task="binary" if num_classes == 1 else "multiclass", num_classes=num_classes
         )
-        self.mcc = MatthewsCorrCoef(task='binary')
+        #self.mcc = MatthewsCorrCoef(task='multiclass')
         # Using a pretrained ResNet backbone
         self.resnet_model = self.resnets[resnet_version](pretrained=transfer)
         # Replace old FC layer with Identity so we can train our own
@@ -92,13 +93,13 @@ class ResNetClassifier(pl.LightningModule):
         # self.test_dir = f'model_test_predictions/{datestring}'
         # os.makedirs(self.test_dir, exist_ok=True)
 
-        filenames, targets = [], []
-        for filename, target in ImageFolder(self.test_path).imgs:
-            filenames.append(filename)
-            targets.append(target)
-        self.df = pd.DataFrame.from_dict({'filename': filenames, 'target': targets})
+        #filenames, targets = [], []
+        #for filename, target in ImageFolder(self.test_path).imgs:
+        #    filenames.append(filename)
+        #    targets.append(target)
+        #self.df = pd.DataFrame.from_dict({'filename': filenames, 'target': targets})
 
-        self.test_predictions, self.test_targets = [], []
+        #self.test_predictions, self.test_targets = [], []
 
     def forward(self, X):
         return self.resnet_model(X)
@@ -116,11 +117,11 @@ class ResNetClassifier(pl.LightningModule):
 
         loss = self.loss_fn(preds, y)
         acc = self.acc(preds, y)
-        mcc = self.mcc(preds, y)
+        #mcc = self.mcc(preds, y)
         if mode=='train':
-            return loss, acc, mcc
+            return loss, acc
         else:
-            return loss, acc, mcc, preds.cpu().numpy(), y.cpu().numpy()
+            return loss, acc, preds.cpu().numpy(), y.cpu().numpy()
 
     def _dataloader(self, data_path, shuffle=False):
         # values here are specific to pneumonia dataset and should be updated for custom data
@@ -143,7 +144,7 @@ class ResNetClassifier(pl.LightningModule):
         return self._dataloader(self.train_path, shuffle=True)
 
     def training_step(self, batch, batch_idx):
-        loss, acc, mcc = self._step(batch, mode='train')
+        loss, acc = self._step(batch, mode='train')
         # perform logging
         self.log(
             "Train/Loss", loss, on_epoch=True, prog_bar=True, logger=True
@@ -151,20 +152,16 @@ class ResNetClassifier(pl.LightningModule):
         self.log(
             "Train/Acc", acc, on_epoch=True, prog_bar=True, logger=True
         )
-        self.log(
-            "Train/MCC", mcc, on_epoch=True, prog_bar=True, logger=True
-        )
         return loss
 
     def val_dataloader(self):
         return self._dataloader(self.val_path, shuffle=True)
 
     def validation_step(self, batch, batch_idx):
-        loss, acc, mcc, _, _ = self._step(batch, mode='val')
+        loss, acc, _, _ = self._step(batch, mode='val')
         # perform logging
         self.log("Val/Loss", loss, on_epoch=True, prog_bar=False, logger=True)
         self.log("Val/Acc", acc, on_epoch=True, prog_bar=True, logger=True)
-        self.log("Val/MCC", mcc, on_epoch=True, prog_bar=True, logger=True)
 
         # Calculate the confusion matrix using sklearn.metrics
         # cm = sklearn.metrics.confusion_matrix(targets, preds)
@@ -257,6 +254,11 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
+        "--test_only",
+        help="do not train the model, only test model",
+        action="store_true",
+    )
+    parser.add_argument(
         "-s", "--save_path", help="""Path to save model trained model checkpoint."""
     )
     parser.add_argument(
@@ -299,7 +301,7 @@ if __name__ == "__main__":
     trainer_args = {
         "accelerator": "gpu" if args.gpus else None,
         "devices": [0],
-        "strategy": "dp" if args.gpus > 1 else None,
+        "strategy": "ddp",
         "max_epochs": args.num_epochs,
         "callbacks": [checkpoint_callback],
         "precision": 16 if args.mixed_precision else 32,
