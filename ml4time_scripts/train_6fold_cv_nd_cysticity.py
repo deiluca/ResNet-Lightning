@@ -13,7 +13,7 @@ for i in range(6):
     train_dir = opj(d2, 'train')
     val_dir = opj(d2, 'val')
     test_dir = opj(d2, 'test')
-    cmd = f'CUDA_VISIBLE_DEVICES=0 python resnet_classifier.py {resnet} {nclasses} {epochs} {train_dir} {val_dir} -ts {test_dir} -g 1 -tr -s {outdir} --ce_weights 1.0 7.05555555556 -lr 1e-6 -tb_outdir {outdir}'
+    cmd = f'CUDA_VISIBLE_DEVICES=0 python resnet_classifier.py {resnet} {nclasses} {epochs} {train_dir} {val_dir} -ts {test_dir} -g 1 -tr -s {outdir} --ce_weights {ce_weights} -lr 1e-6 -tb_outdir {outdir}'
     print(cmd)
     os.system(cmd)
     print('#'*50)
