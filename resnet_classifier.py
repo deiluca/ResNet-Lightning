@@ -12,7 +12,8 @@ import torch.nn.functional as F
 import torchvision.models as models
 from torch.optim import SGD, Adam
 from torch.utils.data import DataLoader
-from torchmetrics import Accuracy, MatthewsCorrCoef
+from torchmetrics import Accuracy, MatthewsCorrCoef, PrecisionRecallCurve
+# from torcheval.metrics import MulticlassAUPRC, MulticlassAccuracy, 
 from torchvision import transforms
 from torchvision.datasets import ImageFolder
 from pytorch_lightning.loggers import TensorBoardLogger
@@ -23,6 +24,10 @@ from utils import plot_confusion_matrix, plot_to_image
 import datetime
 import pandas as pd
 import numpy as np
+from pytorch_lightning import seed_everything
+
+from sklearn.metrics import auc
+
 # Here we define a new class to turn the ResNet model that we want to use as a feature extractor
 # into a pytorch-lightning module so that we can take advantage of lightning's Trainer object.
 # We aim to make it a little more general by allowing users to define the number of prediction classes.
@@ -49,7 +54,9 @@ class ResNetClassifier(pl.LightningModule):
         transfer=True,
         tune_fc_only=True,
         ce_weights = None,
-        save_path=None
+        weight_decay=0,
+        save_path=None,
+        cj_bn = 0.1,
     ):
         super().__init__()
 
@@ -60,6 +67,8 @@ class ResNetClassifier(pl.LightningModule):
         self.lr = lr
         self.batch_size = batch_size
         self.save_path = save_path
+        self.cj_bn = cj_bn
+        self.weight_decay = weight_decay
 
         self.optimizer = self.optimizers[optimizer]
         # instantiate loss criterion
@@ -69,13 +78,17 @@ class ResNetClassifier(pl.LightningModule):
             )
         else:
             self.loss_fn = (
-                nn.BCEWithLogitsLoss(pos_weight=torch.tensor(ce_weights[1])) if num_classes == 1 else nn.CrossEntropyLoss()
+                nn.BCEWithLogitsLoss(pos_weight=torch.tensor(ce_weights[1])) if num_classes == 1 else nn.CrossEntropyLoss(weight=torch.tensor(ce_weights))
             )
         # create accuracy metric
         self.acc = Accuracy(
             task="binary" if num_classes == 1 else "multiclass", num_classes=num_classes
         )
-        self.mcc = MatthewsCorrCoef(task='binary')
+        self.prcurve = PrecisionRecallCurve(task='multiclass', num_classes=self.num_classes, average=None)
+
+        self.multacc = Accuracy(task='multiclass', num_classes=num_classes, average=None)
+        
+        # self.mcc = MatthewsCorrCoef(task="binary" if self.num_classes == 1 else "multiclass")
         # Using a pretrained ResNet backbone
         self.resnet_model = self.resnets[resnet_version](pretrained=transfer)
         # Replace old FC layer with Identity so we can train our own
@@ -100,11 +113,27 @@ class ResNetClassifier(pl.LightningModule):
 
         self.test_predictions, self.test_targets = [], []
 
+    def get_prauc(self, prcurve):
+                # Calculate AUC for each class
+        class_auc_list = []
+        for precision, recall, thresholds in zip(prcurve[0], prcurve[1], prcurve[2]):
+            mask = ~torch.isnan(recall)
+            # Check if there are enough points to compute AUC
+            if len(mask.nonzero()) >= 2:
+                class_auc = auc(recall[mask].cpu().numpy(), precision[mask].cpu().numpy())
+                class_auc_list.append(class_auc)
+            else:
+                # print("Not enough points to compute AUC for this class.")
+                class_auc_list.append(np.nan)
+
+        return class_auc_list
+
     def forward(self, X):
         return self.resnet_model(X)
 
     def configure_optimizers(self):
-        return self.optimizer(self.parameters(), lr=self.lr)
+        print('using lr: ', self.lr)
+        return self.optimizer(self.parameters(), lr=self.lr, weight_decay=self.weight_decay)
 
     def _step(self, batch, mode):
         x, y = batch
@@ -116,11 +145,12 @@ class ResNetClassifier(pl.LightningModule):
 
         loss = self.loss_fn(preds, y)
         acc = self.acc(preds, y)
-        mcc = self.mcc(preds, y)
+        multacc = self.multacc(preds, y)
+        prcurve = self.prcurve(preds, y)
         if mode=='train':
-            return loss, acc, mcc
+            return loss, acc, multacc, prcurve
         else:
-            return loss, acc, mcc, preds.cpu().numpy(), y.cpu().numpy()
+            return loss, acc, multacc, prcurve, preds.cpu().numpy(), y.cpu().numpy()
 
     def _dataloader(self, data_path, shuffle=False):
         # values here are specific to pneumonia dataset and should be updated for custom data
@@ -128,22 +158,25 @@ class ResNetClassifier(pl.LightningModule):
             [
                 # transforms.Resize((500, 500)),
                 transforms.RandomRotation(degrees=(0, 360), fill=255),
-                transforms.RandomResizedCrop(size=(384, 512), scale=(0.3, 1.0), ratio=(1.0, 1.0)),
-                transforms.ColorJitter(brightness=0.1, saturation=0.1, contrast=0.1),
+                # transforms.RandomResizedCrop(size=(256, 256), scale=(0.3, 1.0), ratio=(1.0, 1.0)),
+                transforms.ColorJitter(brightness=self.cj_bn, saturation=0.1, contrast=0.1),
                 transforms.ToTensor(),
                 # transforms.Normalize((0.48232,), (0.23051,)),
                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ]
         )
         img_folder = ImageFolder(data_path, transform=transform)
-
+        print('img_folder.class_to_idx:', img_folder.class_to_idx)
+        self.class_idx = img_folder.class_to_idx
         return DataLoader(img_folder, batch_size=self.batch_size, shuffle=shuffle)
 
     def train_dataloader(self):
         return self._dataloader(self.train_path, shuffle=True)
 
     def training_step(self, batch, batch_idx):
-        loss, acc, mcc = self._step(batch, mode='train')
+        loss, acc, multacc, prcurve = self._step(batch, mode='train')
+
+        prauc = self.get_prauc(prcurve)
         # perform logging
         self.log(
             "Train/Loss", loss, on_epoch=True, prog_bar=True, logger=True
@@ -152,19 +185,59 @@ class ResNetClassifier(pl.LightningModule):
             "Train/Acc", acc, on_epoch=True, prog_bar=True, logger=True
         )
         self.log(
-            "Train/MCC", mcc, on_epoch=True, prog_bar=True, logger=True
+            "Train/AccBad", multacc[self.class_idx['bad']], on_epoch=True, prog_bar=True, logger=True
         )
+        self.log(
+            "Train/AccMediocre", multacc[self.class_idx['mediocre']], on_epoch=True, prog_bar=True, logger=True
+        )
+        self.log(
+            "Train/AccGood", multacc[self.class_idx['good']], on_epoch=True, prog_bar=True, logger=True
+        )
+        self.log(
+            "Train/PRAUCBad", prauc[self.class_idx['bad']], on_epoch=True, prog_bar=True, logger=True
+        )
+        self.log(
+            "Train/PRAUCMediocre", prauc[self.class_idx['mediocre']], on_epoch=True, prog_bar=True, logger=True
+        )
+        self.log(
+            "Train/PRAUCGood", prauc[self.class_idx['good']], on_epoch=True, prog_bar=True, logger=True
+        )
+        # self.log(
+        #     "Train/MCC", mcc, on_epoch=True, prog_bar=True, logger=True
+        # )
         return loss
 
     def val_dataloader(self):
         return self._dataloader(self.val_path, shuffle=True)
 
     def validation_step(self, batch, batch_idx):
-        loss, acc, mcc, _, _ = self._step(batch, mode='val')
+        loss, acc, multacc, prcurve, _, _ = self._step(batch, mode='val')
+        prauc = self.get_prauc(prcurve)
+
         # perform logging
         self.log("Val/Loss", loss, on_epoch=True, prog_bar=False, logger=True)
+        self.log("val_loss", loss, on_epoch=True, prog_bar=False, logger=True)
         self.log("Val/Acc", acc, on_epoch=True, prog_bar=True, logger=True)
-        self.log("Val/MCC", mcc, on_epoch=True, prog_bar=True, logger=True)
+        
+        self.log(
+            "Val/AccBad", multacc[self.class_idx['bad']], on_epoch=True, prog_bar=True, logger=True
+        )
+        self.log(
+            "Val/AccMediocre", multacc[self.class_idx['mediocre']], on_epoch=True, prog_bar=True, logger=True
+        )
+        self.log(
+            "Val/AccGood", multacc[self.class_idx['good']], on_epoch=True, prog_bar=True, logger=True
+        )
+        self.log(
+            "Val/PRAUCBad", prauc[self.class_idx['bad']], on_epoch=True, prog_bar=True, logger=True
+        )
+        self.log(
+            "Val/PRAUCMediocre", prauc[self.class_idx['mediocre']], on_epoch=True, prog_bar=True, logger=True
+        )
+        self.log(
+            "Val/PRAUCGood", prauc[self.class_idx['good']], on_epoch=True, prog_bar=True, logger=True
+        )
+        # self.log("Val/MCC", mcc, on_epoch=True, prog_bar=True, logger=True)
 
         # Calculate the confusion matrix using sklearn.metrics
         # cm = sklearn.metrics.confusion_matrix(targets, preds)
@@ -178,7 +251,7 @@ class ResNetClassifier(pl.LightningModule):
         return self._dataloader(self.test_path)
 
     def test_step(self, batch, batch_idx):
-        loss, acc, mcc, preds, targets = self._step(batch, mode='test')
+        loss, acc, multacc, prauc, preds, targets = self._step(batch, mode='test')
         
         self.test_predictions.extend(np.squeeze(preds).tolist())
         self.test_targets.extend(np.squeeze(targets).tolist())
@@ -186,11 +259,13 @@ class ResNetClassifier(pl.LightningModule):
         if len(self.test_predictions) == self.df.shape[0]:
             self.df['predicted'] = self.test_predictions
             self.df['target_2'] = self.test_targets
+            self.df['predicted_cls'] = self.df['predicted'].apply(lambda x: np.argmax(x))
+            print('saving output csv')
             self.df.to_csv(os.path.join(self.save_path, 'outputs.csv'), index=False)
 
         self.log("Test/Loss", loss, on_epoch=True, prog_bar=False, logger=True)
         self.log("Test/Acc", acc, on_epoch=True, prog_bar=True, logger=True)
-        self.log("Test/MCC", mcc, on_epoch=True, prog_bar=True, logger=True)
+        # self.log("Test/MCC", mcc, on_epoch=True, prog_bar=True, logger=True)
         
         # perform logging
         # self.log("test_loss", loss, on_step=True, prog_bar=True, logger=True)
@@ -245,6 +320,12 @@ if __name__ == "__main__":
         default=16,
     )
     parser.add_argument(
+        "--ckpth_best",
+        help="""for model testing: best model checkpoint""",
+        type=str,
+        default=None,
+    )
+    parser.add_argument(
         "-tr",
         "--transfer",
         help="""Determine whether to use pretrained model or train from scratch. Defaults to True.""",
@@ -257,6 +338,22 @@ if __name__ == "__main__":
         action="store_true",
     )
     parser.add_argument(
+        "--use_autofindlr",
+        help="use_autofindlr",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--test_only",
+        help="do not train the model, only test model",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--cj_bn",
+        help="Adjust learning rate of optimizer.",
+        type=float,
+        default=0.0,
+    )
+    parser.add_argument(
         "-s", "--save_path", help="""Path to save model trained model checkpoint."""
     )
     parser.add_argument(
@@ -265,7 +362,17 @@ if __name__ == "__main__":
     parser.add_argument(
         "-tb_outdir", "--tb_outdir", help="""tb_outdir""", type=Path
     )
+    parser.add_argument(
+        "-wd",
+        "--weight_decay",
+        help="Adjust learning rate of optimizer.",
+        type=float,
+        default=0.0,
+    )
     args = parser.parse_args()
+    for arg, value in vars(args).items():
+        print(f'{arg}: {value}')    
+    seed_everything(42)
 
     # # Instantiate Model
     model = ResNetClassifier(
@@ -280,15 +387,17 @@ if __name__ == "__main__":
         transfer=args.transfer,
         tune_fc_only=args.tune_fc_only,
         ce_weights=args.ce_weights,
-        save_path = args.save_path
+        save_path = args.save_path,
+        cj_bn = args.cj_bn,
+        weight_decay=args.weight_decay
     )
 
     save_path = args.save_path if args.save_path is not None else "./models"
     checkpoint_callback = pl.callbacks.ModelCheckpoint(
         dirpath=save_path,
-        filename="resnet-model-{epoch}-{val_loss:.2f}-{val_acc:0.2f}",
+        filename="resnet-model-{epoch}-{val_loss:.4f}",
         monitor="Val/Loss",
-        save_top_k=3,
+        save_top_k=1,
         mode="min",
         save_last=False,
     )
@@ -299,18 +408,31 @@ if __name__ == "__main__":
     trainer_args = {
         "accelerator": "gpu" if args.gpus else None,
         "devices": [0],
-        "strategy": "dp" if args.gpus > 1 else None,
+        # "strategy": "dp" if args.gpus > 1 else None,
+        "strategy": "ddp" if args.gpus > 1 else None,
         "max_epochs": args.num_epochs,
         "callbacks": [checkpoint_callback],
         "precision": 16 if args.mixed_precision else 32,
         "logger": TensorBoardLogger(args.tb_outdir, name="my_model"),
-        "log_every_n_steps": 10**10
+        "log_every_n_steps": 10**10,
+        "deterministic": True,
+        "auto_lr_find":args.use_autofindlr
     }
     trainer = pl.Trainer(**trainer_args)
-
-    trainer.fit(model)
+    if not args.test_only:
+        if args.use_autofindlr:
+            # Run learning rate finder
+            lr_finder = trainer.tuner.lr_find(model)
+            # update hparams of the model
+            model.lr = lr_finder.suggestion()
+        trainer.fit(model)
+        torch.save(trainer.model.resnet_model.state_dict(), save_path + "/trained_model.pt")
 
     if args.test_set:
-        trainer.test(model)
-    # Save trained model weights
-    torch.save(trainer.model.resnet_model.state_dict(), save_path + "/trained_model.pt")
+        if not args.test_only:
+            trainer.test(model, ckpt_path='best')
+        else:
+            assert args.ckpth_best is not None
+            trainer.test(model, ckpt_path=args.ckpth_best)
+
+
