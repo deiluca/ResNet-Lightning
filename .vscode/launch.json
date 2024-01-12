@@ -13,6 +13,81 @@
             "justMyCode": true
         },
         {
+            "name": "Train ViT embryo selection",
+            "type": "python",
+            "request": "launch",
+            "program": "resnet_video_classifier_vit.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
+            "args": [
+                "50",
+                "3", //nclasses
+                "5",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/videos_allt/split0_training",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/videos_allt/split0_validation",
+                "-g",
+                "1",
+                "-b",
+                "1",
+                "--unif_temp_sub",
+                "8",
+                "-tr",
+                "--ce_weights",
+                "0.4722222222222222", // 127 of 145 are class 0
+                "2.0816326530612246", // 18 / 145 are class 1, class 1 should have much higher weight
+                "2.4878048780487805",
+                "-lr",
+                "1e-3",
+                "-s",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/videos_allt/first_results_vit",
+                "-ts",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/videos_allt/split0_test",
+                "-tb_outdir",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/videos_allt/first_results_vit"
+            ]
+        },
+        {
+            "name": "Train ResNet3D embryo selection bs 1, unif_temp_sub 154, autofindlr",
+            "type": "python",
+            "request": "launch",
+            "program": "resnet_video_classifier.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
+            "args": [
+                "50",
+                "3", //nclasses
+                "50",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/videos_allt/split0_training",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/videos_allt/split0_validation",
+                "-g",
+                "1",
+                "-b",
+                "1",
+                "--use_autofindlr",
+                "--unif_temp_sub",
+                "154",
+                "-tr",
+                "--ce_weights",
+                "0.4722222222222222", // 127 of 145 are class 0
+                "2.0816326530612246", // 18 / 145 are class 1, class 1 should have much higher weight
+                "2.4878048780487805",
+                "-lr",
+                "1e-3",
+                "-s",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/videos_allt/first_results_autofindlr",
+                "-ts",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/videos_allt/split0_test",
+                "-tb_outdir",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/videos_allt/first_results_autofindlr"
+            ]
+        },
+        {
             "name": "Train ResNet3D embryo selection bs 1, unif_temp_sub 154",
             "type": "python",
             "request": "launch",
@@ -50,6 +125,44 @@
             ]
         },
         {
+            "name": "Test ResNet3D embryo selection",
+            "type": "python",
+            "request": "launch",
+            "program": "resnet_video_classifier.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
+            "args": [
+                "50",
+                "3", //nclasses
+                "1",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/videos_allt/split0_training",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/videos_allt/split0_validation",
+                "-g",
+                "1",
+                "-b",
+                "16",
+                "-tr",
+                "--ce_weights",
+                "0.4722222222222222", // 127 of 145 are class 0
+                "2.0816326530612246", // 18 / 145 are class 1, class 1 should have much higher weight
+                "2.4878048780487805",
+                "-lr",
+                "1e-3",
+                "-s",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/videos_allt/first_results",
+                "-ts",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/videos_allt/split0_test",
+                "-tb_outdir",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/videos_allt/first_results",
+                "--test_only",
+                "--ckpth_best",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/videos_allt/first_results/resnet-model-epoch=0-val_loss=0.9497.ckpt"
+            ]
+        },
+        {
             "name": "Train ResNet3D embryo selection",
             "type": "python",
             "request": "launch",
@@ -62,7 +175,7 @@
             "args": [
                 "50",
                 "3", //nclasses
-                "50",
+                "1",
                 "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/videos_allt/split0_training",
                 "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/videos_allt/split0_validation",
                 "-g",
@@ -85,7 +198,7 @@
             ]
         },
         {
-            "name": "Train ResNet embryo selection",
+            "name": "Train ResNet embryo selection test auto lr find",
             "type": "python",
             "request": "launch",
             "program": "resnet_classifier.py",
@@ -97,7 +210,7 @@
             "args": [
                 "34",
                 "3", //nclasses
-                "5",
+                "200",
                 "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/images_t120/split0_training",
                 "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/images_t120/split0_validation",
                 "-g",
@@ -110,11 +223,44 @@
                 "-lr",
                 "1e-4",
                 "-s",
-                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/images_t120/results_50epochs_resnet34_debug",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/images_t120/results_test_autolrfind",
                 "-ts",
                 "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/images_t120/split0_test",
                 "-tb_outdir",
-                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/images_t120/results_50epochs_resnet34_debug"
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/images_t120/results_test_autolrfind"
+            ]
+        },
+        {
+            "name": "Train ResNet embryo selection test deterministic",
+            "type": "python",
+            "request": "launch",
+            "program": "resnet_classifier.py",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "env": {
+                "CUDA_VISIBLE_DEVICES": "0"
+            },
+            "args": [
+                "34",
+                "3", //nclasses
+                "10",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/images_t120/split0_training",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/images_t120/split0_validation",
+                "-g",
+                "1",
+                "-tr",
+                "--ce_weights",
+                "0.4722222222222222", // 127 of 145 are class 0
+                "2.0816326530612246", // 18 / 145 are class 1, class 1 should have much higher weight
+                "2.4878048780487805",
+                "-lr",
+                "1e-4",
+                "-s",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/images_t120/results_test_deterministic",
+                "-ts",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/images_t120/split0_test",
+                "-tb_outdir",
+                "/mnt/lsdf_iai-aida/Daten_Deininger/projects/embryo_project/training_datasets/images_t120/results_test_deterministic"
             ]
         },
         {
