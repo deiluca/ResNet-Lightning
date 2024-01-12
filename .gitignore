@@ -6,3 +6,6 @@ models
 tb_logs/
 model_test_predictions
 __pycache__
+logs/
+.lr_find*
+sbatch_files
